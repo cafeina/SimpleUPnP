@@ -2,30 +2,24 @@
 #include <iostream>
 #include <unistd.h>
 
-#include "basic_upnp.h"
+#include "basic_upnp.hpp"
+#include "utilities.hpp"
 
 using std::string;
-
-void get_in_ip()
-{
-
-}
+using std::cout;
+using std::endl;
 
 int main()
 {
-    SimpleUPnP u;
+    SimpleUPnP upnp;
     int port = 8080;
-    //u.RouterInfo();
-    //u.GetStatusInfo();
-    //u.GetNatRSIPStatus();
-    std::cout << "1" << std::endl;
-    std::cout << u.AddPortMapping(8080, "TCP", port, u.GetInternalIP()["IPV4"][0],
-"Gleison ROCKS", 60) << std::endl;
-    std::cout << "2" << std::endl;
-    std::cout << u.GetExternalIPAddress() << std::endl;
-    std::cout << u.GetConnectionTypeInfo() << std::endl;
 
-//    std::cout << u.GetSpecificPortMappingEntry(8080, "TCP") << std::endl;
+    upnp.DeviceInfo();
+
+    cout << upnp.AddPortMapping(8080, "TCP", port, GetInternalIP()["IPV4"][0],
+"Cafeina ROCKS", 60) << endl;
+
+    cout << upnp.GetExternalIPAddress() << endl;
 
     return 0;
 }

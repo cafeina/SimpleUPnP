@@ -10,10 +10,11 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <utility>
 
-#include "basic_upnp.h"
+#include "basic_upnp.hpp"
 #include "parser.hpp"
-#include "../utilities/utilities.h"
+#include "utilities.hpp"
 
 using namespace std;
 using namespace tinyxml2;
@@ -22,6 +23,7 @@ SimpleUPnP::SimpleUPnP(int time_out_) : time_out(time_out_)
 {
 	get_igd_location();
 }
+
 SimpleUPnP::~SimpleUPnP() { close(tcp_sock); }
 
 void SimpleUPnP::get_igd_location()
@@ -61,7 +63,7 @@ void SimpleUPnP::parse_igd_location(string &upnp_response)
     igd_path = location_url.substr(path_begin-1);
 }
 
-std::string SimpleUPnP::AddPortMapping(unsigned short external_port, const string &protocol, unsigned short internal_port,
+string SimpleUPnP::AddPortMapping(unsigned short external_port, const string &protocol, unsigned short internal_port,
 						const string &internal_client, const string &description, int lease)
 {
 	string control_parameters = "<NewRemoteHost></NewRemoteHost>\r\n"
@@ -81,7 +83,7 @@ std::string SimpleUPnP::AddPortMapping(unsigned short external_port, const strin
 
 }
 
-void SimpleUPnP::DeletePortMapping(unsigned short external_port, const string &protocol)
+string SimpleUPnP::DeletePortMapping(unsigned short external_port, const string &protocol)
 {
 	string control_parameters = "<NewRemoteHost></NewRemoteHost>\r\n"
 								"<NewExternalPort>%1%</NewExternalPort>\r\n"
@@ -90,10 +92,10 @@ void SimpleUPnP::DeletePortMapping(unsigned short external_port, const string &p
 	string command_arguments = (boost::format(control_parameters) % external_port % protocol).str();
 
 	string request = make_request("DeletePortMapping", command_arguments);
-	exec_command("DeletePortMapping", request);
+	return exec_command("DeletePortMapping", request);
 }
 
-string  SimpleUPnP::GetConnectionTypeInfo()
+string SimpleUPnP::GetConnectionTypeInfo()
 {
 	string command_arguments = "<NewConnectionType></NewConnectionType>\r\n"
 								"<NewPossibleConnectionTypes></NewPossibleConnectionTypes>";
@@ -129,14 +131,14 @@ string SimpleUPnP::GetSpecificPortMappingEntry(unsigned short external_port, con
 	return exec_command("GetSpecificPortMappingEntry", request);
 }
 
-void SimpleUPnP::GetStatusInfo()
+string SimpleUPnP::GetStatusInfo()
 {
 	string command_arguments =  "<NewConnectionStatus></NewConnectionStatus>\r\n"
 								"<NewLastConnectionError></NewLastConnectionError>\r\n"
 								"<NewUptime></NewUptime>";
 
 	string request = make_request("GetStatusInfo", command_arguments);
-	exec_command("GetStatusInfo", request);
+	return exec_command("GetStatusInfo", request);
 }
 
 string SimpleUPnP::GetExternalIPAddress()
@@ -147,53 +149,31 @@ string SimpleUPnP::GetExternalIPAddress()
 	return exec_command("GetExternalIPAddress", request);
 }
 
-void SimpleUPnP::GetNatRSIPStatus()
+string SimpleUPnP::GetNatRSIPStatus()
 {
 	string command_arguments = "<NewRSIPAvailable></NewRSIPAvailable>\r\n"	\
 								"<NewNATEnabled></NewNATEnabled>\r\n";
 
 	string request = make_request("GetNATRSIPStatus", command_arguments);
-	exec_command("GetNATRSIPStatus", request);
+	return exec_command("GetNATRSIPStatus", request);
 }
 
-map<string, vector<string>> SimpleUPnP::GetInternalIP()
+string SimpleUPnP::ForceTermination()
 {
-	struct ifaddrs * ifa=NULL;
-	void * tmp_ip_addr;
+	string request = make_request("ForceTermination", "");
+	return exec_command("ForceTermination", request);
+}
 
-	char ipv4_addr[INET_ADDRSTRLEN];
-	char ipv6_addr[INET6_ADDRSTRLEN];
-	map<string, vector<string>> addresses;
+string SimpleUPnP::RequestTermination()
+{
+	string request = make_request("RequestTermination", "");
+	return exec_command("RequestTermination", request);
+}
 
-	getifaddrs(&ifa);
-
-	while(ifa) {
-		if (!ifa->ifa_addr)
-			continue;
-
-		if(strcmp(ifa->ifa_name, "lo") == 0) {
-			ifa = ifa->ifa_next;
-			continue;
-		}
-
-		if (ifa->ifa_addr->sa_family == AF_INET) { // check if it is IPv4
-			tmp_ip_addr=&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
-			inet_ntop(AF_INET, tmp_ip_addr, ipv4_addr, INET_ADDRSTRLEN);
-			addresses["IPV4"].push_back(ipv4_addr);
-
-		} else if (ifa->ifa_addr->sa_family == AF_INET6) { // check if it is IPv6
-			tmp_ip_addr=&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
-			inet_ntop(AF_INET6, tmp_ip_addr, ipv6_addr, INET6_ADDRSTRLEN);
-			addresses["IPV6"].push_back(ipv6_addr);
-		}
-
-		ifa = ifa->ifa_next;
-	}
-
-	if (ifa)
-		freeifaddrs(ifa);
-
-	return addresses;
+string SimpleUPnP::RequestConnection()
+{
+	string request = make_request("RequestConnection", "");
+	return exec_command("RequestConnection", request);
 }
 
 void SimpleUPnP::send_broadcast()
@@ -310,54 +290,8 @@ void SimpleUPnP::get_description()
 
 void SimpleUPnP::parse_description(const string &xml_doc)
 {
-/*	igd_xml.Parse(xml_doc.c_str());
-
-	tinyxml2::XMLElement *root = igd_xml.RootElement();
-
-	InternetGatewayDevice = root->FirstChildElement("device");
-
-	WANDevice = InternetGatewayDevice->FirstChildElement("deviceList")->FirstChildElement();
-	string wan_device = WANDevice->FirstChildElement("deviceType")->GetText();
-	while(wan_device.find("WANDevice") == string::npos) {
-		WANDevice = WANDevice->NextSiblingElement();
-
-		if(!WANDevice)
-			throw runtime_error("WANDevice not found");
-
-		wan_device = WANDevice->FirstChildElement("deviceType")->GetText();
-	}
-
-	WANConnectionDevice = WANDevice->FirstChildElement("deviceList")->FirstChildElement();
-	string wan_connection_device = WANConnectionDevice->FirstChildElement("deviceType")->GetText();
-	while(wan_connection_device.find("WANConnectionDevice") == string::npos) {
-		WANConnectionDevice = WANConnectionDevice->NextSiblingElement();
-
-		if(!WANConnectionDevice)
-			throw runtime_error("WANConnectionDevice not found");
-
-		wan_connection_device = WANConnectionDevice->FirstChildElement("deviceType")->GetText();
-	}
-
-	WANIPConnection = WANConnectionDevice->FirstChildElement("serviceList")->FirstChildElement();
-	string wan_ip_connection = WANIPConnection->FirstChildElement("serviceType")->GetText();
-	while(wan_ip_connection.find("WANIPConnection") == string::npos) {
-		WANIPConnection = WANIPConnection->NextSiblingElement();
-
-		if(!WANIPConnection)
-			throw runtime_error("WANIPConnection not found");
-
-		wan_ip_connection = WANIPConnection->FirstChildElement("serviceType")->GetText();
-	}
-
-	cout << InternetGatewayDevice->FirstChildElement("deviceType")->GetText() << endl;
-	cout << WANDevice->FirstChildElement("deviceType")->GetText() << endl;
-	cout << WANConnectionDevice->FirstChildElement("deviceType")->GetText() << endl;
-	cout << WANIPConnection->FirstChildElement("serviceType")->GetText() << endl;
-
-
-	cout << controlURL << endl;*/
-
-	std::map<string, tinyxml2::XMLElement*> devices = parser.parse_description(xml_doc);
+	parser = new UPnPParser(xml_doc);
+	map<string, tinyxml2::XMLElement*> devices = parser->parse_description();
 
 	WANDevice = devices["WANDevice"];
 	WANConnectionDevice = devices["WANConnectionDevice"];
@@ -366,34 +300,10 @@ void SimpleUPnP::parse_description(const string &xml_doc)
 	controlURL = WANIPConnection->FirstChildElement("controlURL")->GetText();
 }
 
-void SimpleUPnP::RouterInfo()
+vector<pair<string, string>> SimpleUPnP::DeviceInfo()
 {
-	cout << "=======================+ ROUTER INFORMATION +=======================" << endl;
-
-	cout << "Presentation URL: "
-		 <<	InternetGatewayDevice->FirstChildElement("presentationURL")->GetText() << endl
-		 << "Friendly Name: "
-		 << InternetGatewayDevice->FirstChildElement("friendlyName")->GetText() << endl
-		 << "Manufacturer: "
-		 << InternetGatewayDevice->FirstChildElement("manufacturer")->GetText() << endl
-		 << "Manufacturer URL: "
-		 << InternetGatewayDevice->FirstChildElement("manufacturerURL")->GetText() << endl
-		 << "Model Description: "
-		 << InternetGatewayDevice->FirstChildElement("modelDescription")->GetText() << endl
-		 << "Model Name: "
-		 << InternetGatewayDevice->FirstChildElement("modelName")->GetText() << endl
-		 << "Model Number: "
-		 << InternetGatewayDevice->FirstChildElement("modelNumber")->GetText() << endl
-		 << "Model URL: "
-		 << InternetGatewayDevice->FirstChildElement("modelURL")->GetText() << endl
-		 << "Serial Number: "
-		 << InternetGatewayDevice->FirstChildElement("serialNumber")->GetText() << endl
-		 << "UDN: "
-		 << InternetGatewayDevice->FirstChildElement("UDN")->GetText() << endl
-		 << "UPC: "
-		 << InternetGatewayDevice->FirstChildElement("UPC")->GetText() << endl;
-
-	cout << "=====================================================================" << endl;
+	vector<pair<string, string>> info = parser->get_device_info();
+	return info;
 }
 
 string SimpleUPnP::read_response(int sock, const string &command)
