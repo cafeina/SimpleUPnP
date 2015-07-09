@@ -17,7 +17,7 @@ int main()
     upnp.DeviceInfo();
 
     cout << upnp.AddPortMapping(8080, "TCP", port, GetInternalIP()["IPV4"][0],
-"Cafeina ROCKS", 60) << endl;
+"SimpleUPnP", 60) << endl;
 
     cout << upnp.GetExternalIPAddress() << endl;
 
